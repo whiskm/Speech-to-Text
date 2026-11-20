@@ -1,6 +1,6 @@
-import { checkAccess, json, type CommonEnv } from '../../server/common';
+import { checkAccess, json, type CommonEnv } from './common';
 
-interface Env extends CommonEnv {
+export interface LlmEnv extends CommonEnv {
   /** Optional comma-separated extra hosts for self-hosted or rare OpenAI-compatible APIs. */
   EXTRA_LLM_HOSTS?: string;
 }
@@ -40,7 +40,7 @@ interface ProxyBody {
  * X-LLM-Key header and is never stored or logged. Browsers cannot call most providers
  * directly because of CORS, which is why this proxy exists.
  */
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export async function handleLlm(request: Request, env: LlmEnv): Promise<Response> {
   const denied = checkAccess(request, env);
   if (denied) return denied;
 
@@ -92,4 +92,4 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       'Cache-Control': 'no-store',
     },
   });
-};
+}
