@@ -150,7 +150,7 @@ export function Recording() {
 
       <div className="subtitles" aria-live="polite">
         {lines.length === 0 && (
-          <p className="sys">{online ? 'Текст появится после первой фразы.' : 'Нет сети. Звук сохраняется, текст появится позже.'}</p>
+          <p className="sys">{online ? 'Текст появляется кусками по 10–25 секунд.' : 'Нет сети. Звук сохраняется, текст появится позже.'}</p>
         )}
         {lines.map((s, i) => (
           <p key={s.id} style={{ opacity: [0.28, 0.6, 1][i + 3 - lines.length] }}>

@@ -58,6 +58,11 @@ export interface Rec {
   ai?: AiResult;
   aiPending?: boolean;
   aiError?: string;
+  /** Set once the language model has corrected recognition mistakes in the transcript. */
+  textFix?: { at: number; model: string };
+  /** Progress of a running correction, in batches. */
+  fixProgress?: { done: number; total: number };
+  fixError?: string;
 }
 
 /** A recognised piece of text with its position in the recording. */
@@ -70,6 +75,8 @@ export interface Segment {
   /** Hidden from summaries: silence artefacts or voices from the hall. */
   noise: boolean;
   noiseReason?: 'artefact' | 'hall';
+  /** Text as Whisper returned it, kept after an AI correction so it can be restored. */
+  original?: string;
   updatedAt: number;
 }
 

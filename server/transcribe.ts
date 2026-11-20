@@ -26,7 +26,7 @@ export async function handleTranscribe(request: Request, env: TranscribeEnv): Pr
 
   const url = new URL(request.url);
   const lang = url.searchParams.get('lang');
-  const prompt = (url.searchParams.get('prompt') ?? '').slice(0, 200);
+  const prompt = (url.searchParams.get('prompt') ?? '').slice(0, 300);
 
   const buf = await request.arrayBuffer();
   if (buf.byteLength === 0) return json({ error: 'empty' }, 400);

@@ -63,6 +63,7 @@ function cleanRecord(v: unknown): Rec | null {
     audioMime: optStr(v.audioMime, 100),
     audioSize: optNum(v.audioSize),
     ai: cleanAi(v.ai),
+    textFix: isObj(v.textFix) ? { at: num(v.textFix.at), model: str(v.textFix.model, 200) } : undefined,
   };
 }
 
@@ -76,6 +77,7 @@ function cleanSegment(v: unknown): Segment | null {
     text: str(v.text, 20000),
     noise: v.noise === true,
     noiseReason: v.noiseReason === 'artefact' || v.noiseReason === 'hall' ? v.noiseReason : undefined,
+    original: typeof v.original === 'string' ? str(v.original, 20000) : undefined,
     updatedAt: num(v.updatedAt),
   };
 }
