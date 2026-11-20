@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { checkAccess, json, type CommonEnv } from '../../server/common';
 
 interface Env extends CommonEnv {
@@ -6,14 +7,12 @@ interface Env extends CommonEnv {
 
 const MAX_BYTES = 5 * 1024 * 1024;
 
+/**
+ * Native base64 from node:buffer (needs the nodejs_compat flag). A 30 s WAV is about
+ * 1 MB, and a JavaScript loop over it can use most of the 10 ms CPU limit of the free plan.
+ */
 function toBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  let bin = '';
-  const step = 0x8000;
-  for (let i = 0; i < bytes.length; i += step) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + step));
-  }
-  return btoa(bin);
+  return Buffer.from(buf).toString('base64');
 }
 
 /**
