@@ -299,7 +299,7 @@ export function Settings({ anchor }: { anchor?: string }) {
           </div>
         </section>
 
-        <p className="hint" style={{ textAlign: 'center' }}>Тихая комната · версия {__APP_VERSION__}</p>
+        <p className="hint" style={{ textAlign: 'center' }}>Pith · версия {__APP_VERSION__}</p>
       </div>
     </main>
   );

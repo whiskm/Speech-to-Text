@@ -16,8 +16,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pcm-worklet.js'],
       manifest: {
-        name: 'Тихая комната',
-        short_name: 'Тихая комната',
+        name: 'Pith',
+        short_name: 'Pith',
         description: 'Запись речи в текст: выжимка, конспект и чат с ИИ.',
         lang: 'ru',
         start_url: '/',
