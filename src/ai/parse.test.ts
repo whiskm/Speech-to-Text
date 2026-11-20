@@ -77,3 +77,32 @@ describe('buildPrompt', () => {
     expect(buildPrompt('lecture', '#1 [0:01] текст', false)).not.toContain('"noise"');
   });
 });
+
+describe('promptTail', () => {
+  it('keeps short text and cuts long text at a word boundary', async () => {
+    const { promptTail } = await import('../stt/queue');
+    expect(promptTail('  Короткий   текст ')).toBe('Короткий текст');
+    const long = Array.from({ length: 60 }, (_, i) => `слово${i}`).join(' ');
+    const tail = promptTail(long, 50);
+    expect(tail.length).toBeLessThanOrEqual(50);
+    expect(long.endsWith(tail)).toBe(true);
+    expect(tail.startsWith('слово')).toBe(true);
+  });
+});
+
+describe('acceptFix', () => {
+  it('takes a corrected line of similar length', async () => {
+    const { acceptFix } = await import('./fixText');
+    expect(acceptFix('Мы проведаем длинный фрагмент для распознавания реки.', 'Мы проверяем длинный фрагмент для распознавания речи.')).toBe(
+      'Мы проверяем длинный фрагмент для распознавания речи.',
+    );
+  });
+  it('refuses empty, shortened or padded answers', async () => {
+    const { acceptFix } = await import('./fixText');
+    const src = 'Изменение внутренней энергии системы равно количеству теплоты минус работа.';
+    expect(acceptFix(src, '')).toBeNull();
+    expect(acceptFix(src, 42)).toBeNull();
+    expect(acceptFix(src, 'Энергия.')).toBeNull();
+    expect(acceptFix(src, src + ' Кроме того, лектор добавил много интересного о второй и третьей теоремах.')).toBeNull();
+  });
+});

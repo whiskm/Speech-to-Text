@@ -9,8 +9,15 @@ export interface SegmenterOptions {
   frameMs?: number;
   /** Segments with less voiced audio than this are dropped as clicks and coughs. */
   minSpeechMs?: number;
-  /** A pause this long closes the segment. */
+  /** A pause this long closes the segment, once it is at least `minChunkMs` long. */
   silenceCloseMs?: number;
+  /**
+   * Shorter pieces keep their pauses and grow further. Whisper is trained on 30 s
+   * windows and makes more mistakes on 2–3 s phrases without context.
+   */
+  minChunkMs?: number;
+  /** A pause this long always closes the segment, so long silence never reaches Whisper. */
+  longSilenceMs?: number;
   /** After this length the next quiet frame closes the segment. */
   softMaxMs?: number;
   /** Hard limit: Whisper works best on pieces up to 30 s. */
@@ -23,8 +30,8 @@ export interface SegmenterOptions {
 
 /**
  * Energy-based voice activity detector. It cuts a mono PCM stream into speech pieces
- * at natural pauses, so silence never reaches the recogniser (Whisper invents
- * phrases like "Продолжение следует" on silence).
+ * of 10–25 s at natural pauses. Long silence never reaches the recogniser (Whisper
+ * invents phrases like "Продолжение следует" on silence).
  */
 export class Segmenter {
   private readonly sr: number;
@@ -56,6 +63,8 @@ export class Segmenter {
     this.o = {
       minSpeechMs: opts.minSpeechMs ?? 400,
       silenceCloseMs: opts.silenceCloseMs ?? 800,
+      minChunkMs: opts.minChunkMs ?? 10000,
+      longSilenceMs: opts.longSilenceMs ?? 2500,
       softMaxMs: opts.softMaxMs ?? 24000,
       maxMs: opts.maxMs ?? 29500,
       prerollMs: opts.prerollMs ?? 300,
@@ -140,7 +149,12 @@ export class Segmenter {
 
     const lenMs = ((this.pos - this.segStart) / this.sr) * 1000;
     const silentMs = this.silentRun * this.frameMs;
-    if (silentMs >= this.o.silenceCloseMs || (lenMs >= this.o.softMaxMs && !voiced) || lenMs >= this.o.maxMs) {
+    if (
+      (silentMs >= this.o.silenceCloseMs && lenMs >= this.o.minChunkMs) ||
+      silentMs >= this.o.longSilenceMs ||
+      (lenMs >= this.o.softMaxMs && !voiced) ||
+      lenMs >= this.o.maxMs
+    ) {
       this.close();
     }
   }

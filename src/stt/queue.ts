@@ -41,9 +41,37 @@ const PROMPTS: Record<string, Record<string, string>> = {
   },
 };
 
+/** Last words before `ms`, cut at a word boundary. Whisper keeps style and terms consistent with them. */
+export function promptTail(text: string, max = 180): string {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(-max);
+  const space = cut.indexOf(' ');
+  return space >= 0 ? cut.slice(space + 1) : cut;
+}
+
+async function contextPrompt(chunk: Chunk, rec: Rec): Promise<string | undefined> {
+  const before = await db.segments
+    .where('[recordId+startMs]')
+    .between([rec.id, -Infinity], [rec.id, chunk.startMs], true, false)
+    .reverse()
+    .limit(8)
+    .toArray();
+  const tail = promptTail(
+    before
+      .filter((s) => !s.noise)
+      .reverse()
+      .map((s) => s.text)
+      .join(' '),
+  );
+  if (tail) return tail;
+  // No text yet: a short description of the recording, in its language.
+  return rec.lang !== 'auto' ? PROMPTS[rec.lang]?.[rec.scenario] : undefined;
+}
+
 async function transcribe(chunk: Chunk, rec: Rec, accessCode: string): Promise<ApiResponse> {
   const params = new URLSearchParams({ lang: rec.lang });
-  const prompt = rec.lang !== 'auto' ? PROMPTS[rec.lang]?.[rec.scenario] : undefined;
+  const prompt = await contextPrompt(chunk, rec);
   if (prompt) params.set('prompt', prompt);
   let res: Response;
   try {
@@ -84,6 +112,27 @@ function setProblem(msg: string | null) {
   listeners.forEach((fn) => fn(msg));
 }
 
+/**
+ * Pieces of one microphone recording go one at a time, so each gets the text before it
+ * as a Whisper prompt. Uploaded files allow two at once: they arrive all together and
+ * would otherwise take twice as long.
+ */
+async function pickBatch(candidates: Chunk[]): Promise<Chunk[]> {
+  const batch: Chunk[] = [];
+  const perRecord = new Map<string, number>();
+  const sources = new Map<string, Rec['source'] | undefined>();
+  for (const c of candidates) {
+    if (batch.length >= PARALLEL) break;
+    if (!sources.has(c.recordId)) sources.set(c.recordId, (await db.records.get(c.recordId))?.source);
+    const limit = sources.get(c.recordId) === 'file' ? PARALLEL : 1;
+    const n = perRecord.get(c.recordId) ?? 0;
+    if (n >= limit) continue;
+    perRecord.set(c.recordId, n + 1);
+    batch.push(c);
+  }
+  return batch;
+}
+
 /** Starts processing queued audio pieces if it is not running already. */
 export function kickQueue(): void {
   if (running) {
@@ -100,12 +149,13 @@ async function run(): Promise<void> {
       again = false;
       if (!navigator.onLine) break;
       const now = Date.now();
-      const batch = await db.chunks
+      const candidates = await db.chunks
         .where('[recordId+idx]')
         .between([Dexie.minKey, Dexie.minKey], [Dexie.maxKey, Dexie.maxKey])
         .filter((c) => c.attempts < MAX_ATTEMPTS && (backoffUntil.get(c.id) ?? 0) <= now)
-        .limit(PARALLEL)
+        .limit(PARALLEL * 4)
         .toArray();
+      const batch = await pickBatch(candidates);
       if (batch.length === 0) {
         const waiting = [...backoffUntil.values()].filter((t) => t > now);
         if (waiting.length) setTimeout(kickQueue, Math.min(...waiting) - now + 50);

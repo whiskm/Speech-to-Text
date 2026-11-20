@@ -78,9 +78,10 @@ export async function splitAudio(recordId: string, blob: Blob): Promise<void> {
 export async function recognizeAgain(recordId: string): Promise<void> {
   const audio = await db.audio.get(recordId);
   if (!audio) throw new Error('У записи нет аудио');
-  await db.transaction('rw', db.segments, db.chunks, async () => {
+  await db.transaction('rw', db.segments, db.chunks, db.records, async () => {
     await db.segments.where('recordId').equals(recordId).delete();
     await db.chunks.where('recordId').equals(recordId).delete();
+    await db.records.update(recordId, { textFix: undefined, fixProgress: undefined, fixError: undefined });
   });
   await splitAudio(recordId, audio.blob);
 }

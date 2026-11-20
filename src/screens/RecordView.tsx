@@ -1,6 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ask } from '../ai/chat';
+import { fixTranscript, isFixRunning, undoFix } from '../ai/fixText';
 import { runAi, setTaskDone } from '../ai/pipeline';
 import { CHAT_SUGGESTIONS } from '../ai/prompts';
 import { downloadBlob } from '../backup/backup';
@@ -147,6 +148,7 @@ export function RecordView({ id }: { id: string }) {
             segments={segments}
             chunksLeft={chunksLeft}
             hasAudio={!!audio}
+            aiReady={aiReady}
             seek={seek}
             onExplain={(s) => void askQuestion(`Объясни проще: «${s}»`)}
             onAsk={(s) => {
@@ -427,11 +429,53 @@ function toBlocks(segments: Segment[]): Block[] {
   return blocks;
 }
 
+function FixBar({ rec, aiReady }: { rec: Rec; aiReady: boolean }) {
+  if (rec.fixProgress && isFixRunning(rec.id)) {
+    const p = rec.fixProgress;
+    return (
+      <div className="stack" style={{ gap: 8 }}>
+        <div className="progress">
+          <i style={{ width: `${p.total ? (p.done / p.total) * 100 : 0}%` }} />
+        </div>
+        <span className="hint">
+          ИИ исправляет ошибки распознавания: {p.done} из {p.total} частей
+        </span>
+      </div>
+    );
+  }
+  if (rec.textFix) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span className="chip chip-accent">Текст исправлен ИИ</span>
+        <button
+          type="button"
+          className="chip chip-outline"
+          onClick={() => {
+            if (confirm('Вернуть текст в том виде, как его распознал Whisper?')) void undoFix(rec.id);
+          }}
+        >
+          Вернуть исходный
+        </button>
+      </div>
+    );
+  }
+  if (!aiReady) return null;
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      {rec.fixError && <div className="alert alert-danger">{rec.fixError}</div>}
+      <button type="button" className="chip chip-outline" style={{ alignSelf: 'flex-start' }} onClick={() => void fixTranscript(rec.id)}>
+        Исправить ошибки распознавания ИИ
+      </button>
+    </div>
+  );
+}
+
 function TextTab({
   rec,
   segments,
   chunksLeft,
   hasAudio,
+  aiReady,
   seek,
   onExplain,
   onAsk,
@@ -440,6 +484,7 @@ function TextTab({
   segments: Segment[];
   chunksLeft: number;
   hasAudio: boolean;
+  aiReady: boolean;
   seek: (ms: number) => void;
   onExplain: (s: string) => void;
   onAsk: (s: string) => void;
@@ -521,6 +566,7 @@ function TextTab({
         </div>
       )}
       {rec.status === 'ready' && !visible && <div className="empty">Речь в записи не найдена.</div>}
+      {rec.status === 'ready' && visible && <FixBar rec={rec} aiReady={aiReady} />}
 
       <div ref={box} className="stack" style={{ gap: 22 }}>
         {blocks.map((b, i) => {

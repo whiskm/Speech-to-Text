@@ -35,23 +35,37 @@ function run(samples: Float32Array, block = 2048): SpeechSegment[] {
 }
 
 describe('Segmenter', () => {
-  it('cuts speech at pauses and skips silence', () => {
+  it('keeps short pauses inside one piece and skips long silence', () => {
     const segs = run(
       signal([
         { ms: 1000, amp: 0 },
         { ms: 2000, amp: 0.3 },
         { ms: 1500, amp: 0 },
         { ms: 1000, amp: 0.3 },
-        { ms: 1500, amp: 0 },
+        { ms: 3000, amp: 0 },
+        { ms: 1500, amp: 0.3 },
+        { ms: 3000, amp: 0 },
       ]),
     );
+    // 1.5 s pause stays inside the piece; 3 s pauses split it.
     expect(segs).toHaveLength(2);
     expect(segs[0].startMs).toBeGreaterThan(600);
     expect(segs[0].startMs).toBeLessThan(1050);
-    expect(segs[1].startMs).toBeGreaterThan(4100);
-    expect(segs[1].startMs).toBeLessThan(4550);
-    // Trailing silence is trimmed to the preroll length.
-    expect(segs[0].endMs - segs[0].startMs).toBeLessThan(2800);
+    expect(segs[0].endMs - segs[0].startMs).toBeGreaterThan(4400);
+    expect(segs[0].endMs - segs[0].startMs).toBeLessThan(5300);
+    expect(segs[1].startMs).toBeGreaterThan(8100);
+    expect(segs[1].startMs).toBeLessThan(8550);
+  });
+
+  it('builds pieces of 10 s or more from phrases with short pauses', () => {
+    const parts = [{ ms: 500, amp: 0 }];
+    for (let i = 0; i < 20; i++) parts.push({ ms: 2500, amp: 0.3 }, { ms: 900, amp: 0 });
+    const segs = run(signal(parts));
+    expect(segs.length).toBeGreaterThanOrEqual(3);
+    for (const s of segs.slice(0, -1)) {
+      expect(s.endMs - s.startMs).toBeGreaterThanOrEqual(9000);
+      expect(s.endMs - s.startMs).toBeLessThanOrEqual(30000);
+    }
   });
 
   it('splits long continuous speech into pieces under 30 seconds', () => {
@@ -78,6 +92,29 @@ describe('Segmenter', () => {
   });
 });
 
+function tone(rate: number, hz: number, seconds: number): Float32Array {
+  const x = new Float32Array(Math.round(rate * seconds));
+  for (let i = 0; i < x.length; i++) x[i] = Math.sin((2 * Math.PI * hz * i) / rate);
+  return x;
+}
+
+/** Gain in dB of a pure tone through the resampler, measured away from the edges. */
+function gainDb(rate: number, hz: number): number {
+  const r = new Resampler(rate, 16000);
+  const input = tone(rate, hz, 1);
+  const parts: Float32Array[] = [];
+  for (let i = 0; i < input.length; i += 2048) parts.push(r.process(input.subarray(i, i + 2048)));
+  const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+  let off = 0;
+  for (const p of parts) {
+    out.set(p, off);
+    off += p.length;
+  }
+  const mid = out.subarray(1000, out.length - 1000);
+  const rms = Math.sqrt(mid.reduce((n, v) => n + v * v, 0) / mid.length);
+  return 20 * Math.log10(rms / Math.SQRT1_2 + 1e-12);
+}
+
 describe('Resampler', () => {
   it('turns 48 kHz into 16 kHz across blocks and keeps the level', () => {
     const r = new Resampler(48000, 16000);
@@ -89,15 +126,27 @@ describe('Resampler', () => {
       total += out.length;
       if (out.length) last = out[out.length - 1];
     }
-    expect(Math.abs(total - 16000)).toBeLessThanOrEqual(1);
-    expect(last).toBeCloseTo(0.5, 5);
+    expect(Math.abs(total - 16000)).toBeLessThanOrEqual(81);
+    expect(last).toBeCloseTo(0.5, 4);
   });
 
   it('handles 44.1 kHz', () => {
     const r = new Resampler(44100, 16000);
     const out = r.process(new Float32Array(44100));
-    expect(Math.abs(out.length - 16000)).toBeLessThanOrEqual(1);
+    expect(Math.abs(out.length - 16000)).toBeLessThanOrEqual(81);
   });
+
+  for (const rate of [48000, 44100]) {
+    it(`keeps speech flat at ${rate} Hz`, () => {
+      for (const hz of [300, 1000, 3000, 5000]) expect(Math.abs(gainDb(rate, hz))).toBeLessThan(0.1);
+      expect(gainDb(rate, 6000)).toBeGreaterThan(-1);
+    });
+
+    it(`suppresses everything above 8.8 kHz by more than 60 dB at ${rate} Hz`, () => {
+      // Each of these would fold back into the 0–8 kHz speech band.
+      for (const hz of [9000, 10000, 12000, 14000, 16000, 20000]) expect(gainDb(rate, hz)).toBeLessThan(-60);
+    });
+  }
 });
 
 describe('encodeWav', () => {

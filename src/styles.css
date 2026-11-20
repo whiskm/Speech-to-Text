@@ -28,6 +28,12 @@
   box-sizing: border-box;
 }
 
+html {
+  /* No double-tap zoom: taps act at once, like in an installed app. */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+
 html,
 body {
   margin: 0;
@@ -58,6 +64,13 @@ select,
 textarea {
   font: inherit;
   color: inherit;
+}
+
+/* iPhone zooms into any field with text smaller than 16px and stays zoomed afterwards. */
+input,
+select,
+textarea {
+  font-size: 16px;
 }
 
 button {
@@ -383,7 +396,7 @@ button:disabled {
   border: 1px solid var(--line-strong);
   background: var(--bg);
   color: var(--text);
-  font-size: 15px;
+  font-size: 16px;
   width: 100%;
 }
 
