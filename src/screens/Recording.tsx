@@ -96,7 +96,7 @@ export function Recording() {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, paddingTop: 8 }}>
-        <span className="timer" aria-live="off">
+        <span className="timer" aria-live="off" style={{ color: live.problem ? 'var(--muted)' : undefined }}>
           {fmtTime(elapsed)}
         </span>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -115,19 +115,38 @@ export function Recording() {
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, minHeight: 0 }}>
+      <div className="pulse-zone">
         <div className="pulse" ref={pulseRef}>
           <div className="ripple" />
           <div className="ripple" />
           <div className="ripple" />
           <div className="pulse-core" aria-hidden="true">
-            {[28, 46, 62, 42, 24].map((h, i) => (
-              <div key={i} className="bar" style={{ height: h, ['--k' as string]: [0.8, 1, 1.2, 0.95, 0.75][i] }} />
+            {[0.3, 0.48, 0.64, 0.44, 0.26].map((h, i) => (
+              <div key={i} className="bar" style={{ height: `${h * 100}%`, ['--k' as string]: [0.8, 1, 1.2, 0.95, 0.75][i] }} />
             ))}
           </div>
         </div>
-        <span style={{ fontSize: 13, color: 'var(--accent)' }}>{paused ? 'Запись приостановлена' : 'Слушаю'}</span>
+        <span style={{ fontSize: 13, color: live.problem ? 'var(--warn)' : 'var(--accent)' }}>
+          {live.problem ? 'Звук не поступает' : paused ? 'Запись приостановлена' : 'Слушаю'}
+        </span>
       </div>
+
+      {live.problem === 'stalled' && (
+        <div className="alert alert-warn stack" role="alert" style={{ gap: 10, marginBottom: 12 }}>
+          <span>Звук перестал поступать. Так бывает, если телефон блокировался или другое приложение заняло микрофон.</span>
+          <button type="button" className="btn btn-sm" onClick={() => void session.wake()}>
+            Продолжить запись
+          </button>
+        </div>
+      )}
+      {live.problem === 'mic-ended' && (
+        <div className="alert alert-danger stack" role="alert" style={{ gap: 10, marginBottom: 12 }}>
+          <span>Система отключила микрофон. Всё, что успело записаться, сохранится.</span>
+          <button type="button" className="btn btn-sm" onClick={finish} disabled={stopping}>
+            Сохранить запись
+          </button>
+        </div>
+      )}
 
       <div className="subtitles" aria-live="polite">
         {lines.length === 0 && (

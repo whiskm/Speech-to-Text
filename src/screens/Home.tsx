@@ -23,6 +23,21 @@ function loadScenario(): Scenario {
   }
 }
 
+/** iPhone or iPad opened in a browser tab, not from the Home Screen. */
+function iosInBrowser(): boolean {
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true;
+  return ios && !standalone;
+}
+
+function iosHintHiddenUntil(): number {
+  try {
+    return Number(localStorage.getItem('iosHintUntil') ?? 0);
+  } catch {
+    return 0;
+  }
+}
+
 function micError(e: unknown): string {
   const name = (e as { name?: string })?.name;
   if (name === 'NotAllowedError') return 'Нет доступа к микрофону. Разрешите его в настройках браузера.';
@@ -44,6 +59,7 @@ export function Home() {
     return { count, firstAt: first?.createdAt };
   }, []);
   const [elapsed, setElapsed] = useState(0);
+  const [iosHint, setIosHint] = useState(() => iosInBrowser() && iosHintHiddenUntil() < Date.now());
 
   useEffect(() => {
     try {
@@ -124,7 +140,30 @@ export function Home() {
         </div>
       )}
 
-      {!live && showBackup && (
+      {!live && iosHint && (
+        <div className="banner banner-warn" role="status" style={{ marginTop: 12 }}>
+          <span className="banner-text">
+            Добавьте приложение на экран «Домой»: «Поделиться» → «На экран „Домой“». Иначе Safari сотрёт записи, если не открывать сайт 7 дней.
+          </span>
+          <button
+            type="button"
+            className="banner-close"
+            aria-label="Скрыть подсказку на 2 недели"
+            onClick={() => {
+              try {
+                localStorage.setItem('iosHintUntil', String(Date.now() + 14 * DAY));
+              } catch {
+                // Private mode: the hint just returns next time.
+              }
+              setIosHint(false);
+            }}
+          >
+            <IconClose size={16} />
+          </button>
+        </div>
+      )}
+
+      {!live && !iosHint && showBackup && (
         <div className="banner banner-warn" role="status" style={{ marginTop: 12 }}>
           <span style={{ color: 'var(--warn)', display: 'flex' }}>
             <IconDb size={18} />

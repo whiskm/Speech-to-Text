@@ -13,6 +13,11 @@ import { encodeWav } from './wav';
 export interface SessionState {
   recordId: string;
   paused: boolean;
+  /**
+   * `stalled`: no audio arrives, usually after the iPhone screen was locked; a tap may fix it.
+   * `mic-ended`: the system took the microphone away; only saving is possible.
+   */
+  problem: 'stalled' | 'mic-ended' | null;
 }
 
 type LevelFn = (level: number) => void;
@@ -30,6 +35,9 @@ class Session {
   private subs = new Set<() => void>();
   private levelSubs = new Set<LevelFn>();
   private wakeLock: WakeLockSentinel | null = null;
+  private health: ReturnType<typeof setInterval> | undefined;
+  private lastElapsed = -1;
+  private stillTicks = 0;
 
   subscribe = (fn: () => void) => {
     this.subs.add(fn);
@@ -47,6 +55,51 @@ class Session {
 
   private emit() {
     this.subs.forEach((fn) => fn());
+  }
+
+  private setProblem(problem: SessionState['problem']) {
+    if (!this.state || this.state.problem === problem) return;
+    this.state = { ...this.state, problem };
+    this.emit();
+  }
+
+  /**
+   * Runs every second. Audio that stops arriving while not paused means the system
+   * interrupted the microphone; this catches every cause, not only the known events.
+   */
+  private checkHealth = () => {
+    const r = this.recorder;
+    if (!this.state || !r) return;
+    if (r.micEnded) {
+      this.setProblem('mic-ended');
+      return;
+    }
+    if (this.state.paused) {
+      this.stillTicks = 0;
+      return;
+    }
+    const now = r.elapsedMs;
+    if (now === this.lastElapsed) this.stillTicks++;
+    else {
+      this.stillTicks = 0;
+      if (this.state.problem === 'stalled') this.setProblem(null);
+    }
+    this.lastElapsed = now;
+    if (this.stillTicks >= 3 || (r.suspended && this.stillTicks >= 1)) this.setProblem('stalled');
+  };
+
+  /** Tries to restart audio after an interruption. Call it from a tap on iPhone. */
+  async wake(): Promise<boolean> {
+    const r = this.recorder;
+    if (!r || !this.state) return false;
+    if (r.micEnded) {
+      this.setProblem('mic-ended');
+      return false;
+    }
+    const ok = await r.wake();
+    this.stillTicks = 0;
+    if (ok) this.setProblem(null);
+    return ok;
   }
 
   /** Serialises database writes so pieces are stored in order. */
@@ -84,9 +137,13 @@ class Session {
         const idx = this.partIdx++;
         this.enqueue(() => db.audioParts.add({ id: uid(), recordId, idx, blob }));
       },
+      onTrouble: () => this.checkHealth(),
     });
     await db.records.add(rec);
-    this.state = { recordId, paused: false };
+    this.state = { recordId, paused: false, problem: null };
+    this.lastElapsed = -1;
+    this.stillTicks = 0;
+    this.health = setInterval(this.checkHealth, 1000);
     void requestPersistentStorage();
     void this.lockScreen();
     document.addEventListener('visibilitychange', this.onVisibility);
@@ -112,7 +169,7 @@ class Session {
   pause() {
     if (!this.state || this.state.paused) return;
     this.recorder?.pause();
-    this.state = { ...this.state, paused: true };
+    this.state = { ...this.state, paused: true, problem: this.state.problem === 'mic-ended' ? 'mic-ended' : null };
     this.emit();
   }
 
@@ -139,6 +196,7 @@ class Session {
     const { recordId } = this.state;
     const recorder = this.recorder;
     const durationMs = Math.round(recorder.elapsedMs);
+    clearInterval(this.health);
     await recorder.stop();
     await this.writes;
     this.recorder = null;
@@ -152,7 +210,9 @@ class Session {
   }
 
   private onVisibility = () => {
-    if (document.visibilityState === 'visible' && this.state) void this.lockScreen();
+    if (document.visibilityState !== 'visible' || !this.state) return;
+    void this.lockScreen();
+    if (!this.state.paused) void this.wake();
   };
 
   private onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -174,6 +234,10 @@ class Session {
 }
 
 export const session = new Session();
+
+if (import.meta.env.DEV) {
+  (window as unknown as { __session: Session }).__session = session;
+}
 
 export function useSession(): SessionState | null {
   return useSyncExternalStore(session.subscribe, () => session.state);
