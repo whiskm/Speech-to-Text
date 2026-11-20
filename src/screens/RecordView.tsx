@@ -47,6 +47,10 @@ export function RecordView({ id }: { id: string }) {
 
   useEffect(() => () => abort.current?.abort(), []);
 
+  // Built ahead of time: Safari allows copy and share only straight from a tap,
+  // without waiting for the database in between.
+  const markdown = useMemo(() => (rec ? recordToMarkdown(rec, segments, messages) : ''), [rec, segments, messages]);
+
   if (rec === undefined) return null;
   if (rec === null) {
     return (
@@ -209,7 +213,7 @@ export function RecordView({ id }: { id: string }) {
         open={menu}
         onClose={() => setMenu(false)}
         rec={rec}
-        segments={segments}
+        markdown={markdown}
         hasAudio={!!audio}
         audioBlob={audio?.blob}
         aiReady={aiReady}
@@ -447,17 +451,35 @@ function TextTab({
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // On iPhone a tap on the toolbar clears the selection before the click arrives,
+    // so the toolbar stays for a moment after the selection disappears.
+    let hide: ReturnType<typeof setTimeout> | undefined;
     const on = () => {
       const sel = document.getSelection();
       if (sel && !sel.isCollapsed && box.current && sel.anchorNode && box.current.contains(sel.anchorNode)) {
+        clearTimeout(hide);
+        hide = undefined;
         setSelected(sel.toString().trim().slice(0, 1500));
-      } else {
-        setSelected('');
+      } else if (!hide) {
+        hide = setTimeout(() => {
+          hide = undefined;
+          setSelected('');
+        }, 700);
       }
     };
     document.addEventListener('selectionchange', on);
-    return () => document.removeEventListener('selectionchange', on);
+    return () => {
+      clearTimeout(hide);
+      document.removeEventListener('selectionchange', on);
+    };
   }, []);
+
+  const use = (fn: (text: string) => void) => {
+    const text = selected;
+    setSelected('');
+    document.getSelection()?.removeAllRanges();
+    if (text) fn(text);
+  };
 
   const done = rec.chunksTotal - chunksLeft;
   const visible = segments.some((s) => !s.noise);
@@ -545,16 +567,16 @@ function TextTab({
 
       {selected && (
         <div className="selection-bar" role="toolbar" aria-label="Действия с выделенным текстом">
-          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => onExplain(selected)}>
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => use(onExplain)}>
             Объясни проще
           </button>
-          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => onAsk(selected)} style={{ fontWeight: 500 }}>
+          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => use(onAsk)} style={{ fontWeight: 500 }}>
             Спросить
           </button>
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => void navigator.clipboard.writeText(selected).then(() => toast('Скопировано'))}
+            onClick={() => use((t) => void navigator.clipboard.writeText(t).then(() => toast('Скопировано')))}
             style={{ fontWeight: 500 }}
           >
             Копировать
@@ -633,7 +655,7 @@ function RecordMenu({
   open,
   onClose,
   rec,
-  segments,
+  markdown,
   hasAudio,
   audioBlob,
   aiReady,
@@ -642,30 +664,31 @@ function RecordMenu({
   open: boolean;
   onClose: () => void;
   rec: Rec;
-  segments: Segment[];
+  markdown: string;
   hasAudio: boolean;
   audioBlob: Blob | undefined;
   aiReady: boolean;
   hasMessages: boolean;
 }) {
-  const markdown = async () => {
-    const msgs = await db.messages.where('[recordId+createdAt]').between(...between(rec.id)).toArray();
-    return recordToMarkdown(rec, segments, msgs);
-  };
-  const act = (fn: () => unknown) => async () => {
-    onClose();
+  // `fn` runs synchronously inside the tap; only its promise is awaited afterwards.
+  const act = (fn: () => unknown) => () => {
+    let result: unknown;
     try {
-      await fn();
+      result = fn();
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Не получилось', 4000);
     }
+    onClose();
+    Promise.resolve(result).catch((e: unknown) => {
+      if ((e as Error)?.name !== 'AbortError') toast(e instanceof Error ? e.message : 'Не получилось', 4000);
+    });
   };
   const name = safeFileName(rec.title);
   const ext = (rec.audioMime ?? '').includes('mp4') ? 'm4a' : (rec.audioMime ?? '').includes('ogg') ? 'ogg' : (rec.audioMime ?? '').includes('mpeg') ? 'mp3' : 'webm';
 
   return (
     <Sheet open={open} onClose={onClose} label="Действия с записью">
-      <button type="button" className="row" onClick={act(async () => downloadBlob(new Blob([await markdown()], { type: 'text/markdown' }), `${name}.md`))}>
+      <button type="button" className="row" onClick={act(() => downloadBlob(new Blob([markdown], { type: 'text/markdown' }), `${name}.md`))}>
         <span className="row-main">
           <span className="row-title">Скачать в Markdown</span>
           <span className="row-sub">Для Obsidian, Notion и любых заметок</span>
@@ -677,11 +700,11 @@ function RecordMenu({
           <span className="row-sub">Откроется печать, выберите «Сохранить как PDF»</span>
         </span>
       </button>
-      <button type="button" className="row" onClick={act(async () => navigator.clipboard.writeText(await markdown()).then(() => toast('Скопировано')))}>
+      <button type="button" className="row" onClick={act(() => navigator.clipboard.writeText(markdown).then(() => toast('Скопировано')))}>
         <span className="row-title">Скопировать всё</span>
       </button>
       {typeof navigator.share === 'function' && (
-        <button type="button" className="row" onClick={act(async () => navigator.share({ title: rec.title, text: await markdown() }))}>
+        <button type="button" className="row" onClick={act(() => navigator.share({ title: rec.title, text: markdown }))}>
           <span className="row-title">Поделиться</span>
         </button>
       )}
@@ -694,8 +717,8 @@ function RecordMenu({
         <button
           type="button"
           className="row"
-          onClick={act(async () => {
-            if (confirm('Распознать запись заново? Текущий текст заменится новым.')) await recognizeAgain(rec.id);
+          onClick={act(() => {
+            if (confirm('Распознать запись заново? Текущий текст заменится новым.')) return recognizeAgain(rec.id);
           })}
         >
           <span className="row-title">Распознать заново</span>
@@ -710,8 +733,8 @@ function RecordMenu({
         <button
           type="button"
           className="row"
-          onClick={act(async () => {
-            if (confirm('Очистить чат по этой записи?')) await clearChat(rec.id);
+          onClick={act(() => {
+            if (confirm('Очистить чат по этой записи?')) return clearChat(rec.id);
           })}
         >
           <span className="row-title">Очистить чат</span>
@@ -720,10 +743,9 @@ function RecordMenu({
       <button
         type="button"
         className="row"
-        onClick={act(async () => {
+        onClick={act(() => {
           if (confirm(`Удалить «${rec.title}»? Запись, текст и чат удалятся с этого устройства.`)) {
-            await deleteRecord(rec.id);
-            go('', true);
+            return deleteRecord(rec.id).then(() => go('', true));
           }
         })}
       >
