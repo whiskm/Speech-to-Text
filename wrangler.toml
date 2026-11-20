@@ -1,0 +1,8 @@
+# Cloudflare Pages config. Build command: npm run build, output: dist.
+name = "tihaya-komnata"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-11-01"
+
+# Workers AI binding used by functions/api/transcribe.ts (Whisper).
+[ai]
+binding = "AI"
