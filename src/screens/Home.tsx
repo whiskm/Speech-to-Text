@@ -118,7 +118,7 @@ export function Home() {
       <div className="topbar">
         <div className="wordmark">
           <i />
-          Тихая комната
+          Pith
         </div>
         <button type="button" className="icon-btn" aria-label="Поиск по всем записям" onClick={() => go('records/search')}>
           <IconSearch />

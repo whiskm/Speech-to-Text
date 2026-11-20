@@ -5,6 +5,7 @@ import type { Rec } from '../lib/types';
 import { planMerge, type MergePlan, type Snapshot } from './merge';
 import { sanitizeSnapshot } from './sanitize';
 
+/** Backup id from before the app was called Pith. Kept so old and new backups open everywhere. */
 export const BACKUP_APP = 'tihaya-komnata';
 export const BACKUP_FORMAT = 1;
 
@@ -78,7 +79,7 @@ export async function createBackup(withAudio: boolean): Promise<{ blob: Blob; na
   }
   zip.end();
   if (failed) throw failed;
-  return { blob: new Blob(out as BlobPart[], { type: 'application/zip' }), name: `tihaya-komnata-${today()}.zip` };
+  return { blob: new Blob(out as BlobPart[], { type: 'application/zip' }), name: `pith-${today()}.zip` };
 }
 
 export function downloadBlob(blob: Blob, name: string): void {
@@ -159,9 +160,9 @@ export async function readBackup(file: Blob): Promise<LoadedBackup> {
     manifest = JSON.parse(text('manifest.json') ?? 'null') as Manifest;
     data = JSON.parse(text('data.json') ?? 'null');
   } catch {
-    throw new Error('Это не резервная копия «Тихой комнаты».');
+    throw new Error('Это не резервная копия Pith.');
   }
-  if (!manifest || manifest.app !== BACKUP_APP) throw new Error('Это не резервная копия «Тихой комнаты».');
+  if (!manifest || manifest.app !== BACKUP_APP) throw new Error('Это не резервная копия Pith.');
   if (manifest.format > BACKUP_FORMAT) throw new Error('Копия сделана более новой версией приложения. Обновите приложение.');
 
   const snapshot = sanitizeSnapshot(data);

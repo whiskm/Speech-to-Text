@@ -12,6 +12,7 @@ class AppDB extends Dexie {
   kv!: EntityTable<KeyValue, 'key'>;
 
   constructor() {
+    // Internal name from before the app was called Pith. Changing it would hide existing recordings.
     super('tihaya-komnata');
     this.version(1).stores({
       records: 'id, createdAt, updatedAt, status, audioHash',
