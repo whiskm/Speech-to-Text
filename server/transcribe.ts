@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
-import { checkAccess, json, type CommonEnv } from '../../server/common';
+import { checkAccess, json, type CommonEnv } from './common';
 
-interface Env extends CommonEnv {
+export interface TranscribeEnv extends CommonEnv {
   AI: Ai;
 }
 
@@ -19,7 +19,7 @@ function toBase64(buf: ArrayBuffer): string {
  * POST /api/transcribe?lang=ru|en|auto&prompt=...
  * Body: a WAV file up to 30 s. Returns recognised text with segment timings.
  */
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export async function handleTranscribe(request: Request, env: TranscribeEnv): Promise<Response> {
   const denied = checkAccess(request, env);
   if (denied) return denied;
   if (!env.AI) return json({ error: 'no_ai_binding' }, 500);
@@ -56,4 +56,4 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   } catch (e) {
     return json({ error: 'ai_failed', detail: String(e).slice(0, 300) }, 502);
   }
-};
+}

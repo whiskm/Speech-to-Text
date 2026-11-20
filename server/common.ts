@@ -1,4 +1,4 @@
-/** Shared helpers for the Pages Functions in /functions. Kept outside /functions so Pages does not route them. */
+/** Shared helpers for the API handlers in /server, called from the Worker in /worker. */
 
 export interface CommonEnv {
   /** Optional. When set, requests must carry the same value in the X-Access-Code header. */

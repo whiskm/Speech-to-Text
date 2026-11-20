@@ -1,10 +1,24 @@
-# Cloudflare Pages config. Build command: npm run build, output: dist.
-name = "tihaya-komnata"
-pages_build_output_dir = "dist"
+# Cloudflare Worker with static assets.
+# Dashboard build settings: build command `npm run build`, deploy command `npx wrangler deploy`.
+# The name must match the Worker name in the Cloudflare dashboard.
+name = "speech-to-text"
+main = "worker/index.ts"
 compatibility_date = "2026-11-01"
-# node:buffer gives native base64 for audio in functions/api/transcribe.ts.
+# node:buffer gives native base64 for audio in server/transcribe.ts.
 compatibility_flags = ["nodejs_compat"]
+# Keep variables such as ACCESS_CODE that were set in the dashboard on every deploy.
+keep_vars = true
 
-# Workers AI binding used by functions/api/transcribe.ts (Whisper).
+# The built app. Only /api/* reaches the Worker code; everything else is served as files.
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+# Workers AI binding used by server/transcribe.ts (Whisper).
 [ai]
 binding = "AI"
+
+[observability]
+enabled = true
